@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -14,7 +15,7 @@
 
 #define MAX_CONNECTIONS 64
 #define BUFFER_SIZE 4096
-#define VIRTIO_DEVICE "/dev/virtio-ports/com.redhat.spice.0"  // Adjust for your setup
+#define VIRTIO_DEVICE "/tmp/vserial"  // Adjust for your setup
 
 // SOCKS protocol constants
 #define SOCKS_ATYP_IPV4 0x01
@@ -164,12 +165,32 @@ int main(void) {
 }
 
 bool InitializeVirtio(void) {
-    // Open virtio-serial device
-    g_virtioFd = open(VIRTIO_DEVICE, O_RDWR);
+    printf("Attempting to connect to virtio socket at: %s\n", VIRTIO_DEVICE);
+    
+    // Create a socket
+    g_virtioFd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (g_virtioFd < 0) {
-        perror("Failed to open virtio device");
+        printf("Error creating socket: %s (errno=%d)\n", strerror(errno), errno);
+        perror("Failed to create socket");
         return false;
     }
+    
+    // Set up the address
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, VIRTIO_DEVICE, sizeof(addr.sun_path) - 1);
+    
+    // Connect to the socket
+    if (connect(g_virtioFd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        printf("Error connecting to socket: %s (errno=%d)\n", strerror(errno), errno);
+        perror("Failed to connect to virtio socket");
+        close(g_virtioFd);
+        g_virtioFd = -1;
+        return false;
+    }
+    
+    printf("Successfully connected to virtio socket, fd=%d\n", g_virtioFd);
     
     // Set non-blocking mode
     int flags = fcntl(g_virtioFd, F_GETFL, 0);
