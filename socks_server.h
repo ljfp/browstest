@@ -21,7 +21,7 @@
 #define MAX_CONNECTIONS 64
 #define BUFFER_SIZE 4096
 #define SOCKS_PORT 1080
-#define VIRTIO_DEVICE "\\\\.\\vport0p1"  // VirtIO device found in Device Manager
+#define VIRTIO_DEVICE "\\\\.\\Global\\com.redhat.spice.0"  // VirtIO device found in Device Manager
 
 // SOCKS protocol constants
 #define SOCKS_VERSION 5
