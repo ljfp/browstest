@@ -1,14 +1,21 @@
 #ifndef SOCKS_SERVER_H
 #define SOCKS_SERVER_H
 
-#include <windows.h>
+// Define WIN32_LEAN_AND_MEAN to prevent windows.h from including winsock.h
+#define WIN32_LEAN_AND_MEAN
+
+// Include headers in correct order
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#include <mswsock.h>  // For AcceptEx and related functions
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
 
+// Link against required libraries
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "mswsock.lib")  // Required for AcceptEx
 
 // Constants
 #define MAX_CONNECTIONS 64
@@ -67,6 +74,7 @@ extern HANDLE g_iocp;
 extern HANDLE g_virtioHandle;
 extern CONNECTION_CONTEXT g_connections[MAX_CONNECTIONS];
 extern SOCKET g_listenSocket;
+extern LPFN_ACCEPTEX lpfnAcceptEx;  // Add explicit declaration for AcceptEx function pointer
 
 // Function prototypes
 bool InitializeServer(void);

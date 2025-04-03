@@ -5,9 +5,9 @@ HANDLE g_iocp = NULL;
 HANDLE g_virtioHandle = NULL;
 CONNECTION_CONTEXT g_connections[MAX_CONNECTIONS] = {0};
 SOCKET g_listenSocket = INVALID_SOCKET;
+LPFN_ACCEPTEX lpfnAcceptEx = NULL;
 
 // Acceptance information for AcceptEx
-LPFN_ACCEPTEX lpfnAcceptEx = NULL;
 SOCKET g_acceptSocket = INVALID_SOCKET;
 char g_acceptBuffer[2 * (sizeof(SOCKADDR_IN) + 16)];
 OVERLAPPED g_acceptOverlap = {0};
