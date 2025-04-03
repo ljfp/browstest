@@ -15,7 +15,7 @@ echo Compiling main.c...
 echo.
 
 REM Compile the SOCKS server with _CRT_SECURE_NO_WARNINGS to suppress sprintf warnings
-cl /W4 /MT /EHsc /D_CRT_SECURE_NO_WARNINGS main.c /link ws2_32.lib mswsock.lib /Fe:socks_server.exe
+cl /W4 /MT /EHsc /D_CRT_SECURE_NO_WARNINGS /Fe:socks_server.exe main.c /link ws2_32.lib mswsock.lib
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
