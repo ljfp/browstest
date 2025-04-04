@@ -25,9 +25,9 @@ qemu-system-x86_64 \
   -boot menu=on \
   -device virtio-net,netdev=net0 \
   -netdev user,id=net0 \
-  -device virtio-serial \
-  -chardev socket,path=$SOCKET_PATH,server=on,wait=off,id=vserial0 \
-  -device virtserialport,chardev=vserial0,name=com.redhat.spice.0,id=vserial0 \
+  -device virtio-serial,id=virtio-serial0,max_ports=16 \
+  -chardev socket,path=$SOCKET_PATH,server=on,wait=off,id=charvserial0 \
+  -device virtserialport,bus=virtio-serial0.0,chardev=charvserial0,id=serial0,name=com.redhat.spice.0 \
   -vga virtio \
   -display gtk,gl=on \
   -usbdevice tablet

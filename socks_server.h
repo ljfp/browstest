@@ -31,18 +31,21 @@
 #define SOCKS_PORT 1080
 
 // Define the VirtIO Serial device interface GUID
-// {6FDE7521-1B65-48AE-B628-80BE62016026}
+// {6FDE7547-1B65-48AE-B628-80BE62016026}
 DEFINE_GUID(GUID_DEVINTERFACE_VSERIAL, 
-    0x6fde7521, 0x1b65, 0x48ae, 0xb6, 0x28, 0x80, 0xbe, 0x62, 0x01, 0x60, 0x26);
+    0x6fde7547, 0x1b65, 0x48ae, 0xb6, 0x28, 0x80, 0xbe, 0x62, 0x01, 0x60, 0x26);
 
 // Define multiple possible VirtIO device paths to try in sequence
-#define VIRTIO_PATHS_COUNT 7
+#define VIRTIO_PATHS_COUNT 10
 static const char* VIRTIO_PATHS[VIRTIO_PATHS_COUNT] = {
+    "\\\\.\\\\GLOBALROOT\\Device\\{6FDE7547-1B65-48ae-B628-80BE62016026}\\VIOSerialPort", // Direct path based on hardware ID
+    "\\\\.\\{6FDE7547-1B65-48ae-B628-80BE62016026}\\VIOSerialPort", // Alternative direct path
+    "\\\\.\\VIOSerialPort", // Simple device name
+    "\\\\.\\vport0p1", // Direct device name from Windows
     "\\\\.\\\\GLOBALROOT\\Device\\VirtIO\\{74b3b5d0-e2fc-4dda-ad3d-c1a47a988e30}\\", // Red Hat VirtIO specific path
     "\\\\.\\\\Device\\VirtIO\\{74b3b5d0-e2fc-4dda-ad3d-c1a47a988e30}\\", // Alternative format
     "\\\\.\\Global\\com.redhat.spice.0",  // Standard virtio-serial name
     "\\\\.\\com.redhat.spice.0",          // Alternative format
-    "\\\\.\\vport0p1",                    // Direct virtio port device
     "\\\\.\\COM2",                        // Try COM2-COM4 (not COM1 which is likely the standard serial)
     "\\\\.\\COM3"  
 };

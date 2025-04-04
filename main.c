@@ -394,7 +394,133 @@ void CheckVirtIODrivers(void) {
     printf("VirtIO driver check completed.\n\n");
 }
 
+void CheckVport0p1Details(void) {
+    printf("\nChecking vport0p1 device details...\n");
+    
+    HDEVINFO hDevInfo;
+    SP_DEVINFO_DATA devInfoData;
+    DWORD i = 0;
+    
+    // Get all present devices
+    hDevInfo = SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_PRESENT | DIGCF_ALLCLASSES);
+    if (hDevInfo == INVALID_HANDLE_VALUE) {
+        printf("Failed to get device list: %d\n", GetLastError());
+        return;
+    }
+    
+    // Enumerate all devices
+    devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    while (SetupDiEnumDeviceInfo(hDevInfo, i++, &devInfoData)) {
+        char deviceDesc[256] = {0};
+        
+        // Get device description
+        if (SetupDiGetDeviceRegistryProperty(hDevInfo, &devInfoData, SPDRP_DEVICEDESC, NULL, 
+                                             (BYTE*)deviceDesc, sizeof(deviceDesc), NULL)) {
+            
+            // Check if this is vport0p1
+            if (strcmp(deviceDesc, "vport0p1") == 0) {
+                printf("Found vport0p1 device!\n");
+                
+                // Get additional properties
+                char buffer[256];
+                
+                // Hardware ID
+                if (SetupDiGetDeviceRegistryProperty(hDevInfo, &devInfoData, SPDRP_HARDWAREID, NULL, 
+                                                    (BYTE*)buffer, sizeof(buffer), NULL)) {
+                    printf("  Hardware ID: %s\n", buffer);
+                }
+                
+                // Driver
+                if (SetupDiGetDeviceRegistryProperty(hDevInfo, &devInfoData, SPDRP_DRIVER, NULL, 
+                                                    (BYTE*)buffer, sizeof(buffer), NULL)) {
+                    printf("  Driver: %s\n", buffer);
+                }
+                
+                // Service
+                if (SetupDiGetDeviceRegistryProperty(hDevInfo, &devInfoData, SPDRP_SERVICE, NULL, 
+                                                    (BYTE*)buffer, sizeof(buffer), NULL)) {
+                    printf("  Service: %s\n", buffer);
+                }
+                
+                // Physical device object name
+                if (SetupDiGetDeviceRegistryProperty(hDevInfo, &devInfoData, SPDRP_PHYSICAL_DEVICE_OBJECT_NAME, NULL, 
+                                                    (BYTE*)buffer, sizeof(buffer), NULL)) {
+                    printf("  Physical Device Object: %s\n", buffer);
+                }
+                
+                // Location information
+                if (SetupDiGetDeviceRegistryProperty(hDevInfo, &devInfoData, SPDRP_LOCATION_INFORMATION, NULL, 
+                                                    (BYTE*)buffer, sizeof(buffer), NULL)) {
+                    printf("  Location: %s\n", buffer);
+                }
+                
+                // Device instance ID
+                char deviceInstanceId[256] = {0};
+                if (CM_Get_Device_ID(devInfoData.DevInst, deviceInstanceId, sizeof(deviceInstanceId), 0) == CR_SUCCESS) {
+                    printf("  Device Instance ID: %s\n", deviceInstanceId);
+                    
+                    // Try to form a device path
+                    char devicePath[512];
+                    sprintf(devicePath, "\\\\.\\%s", deviceInstanceId);
+                    printf("  Trying path: %s\n", devicePath);
+                    
+                    HANDLE hDevice = CreateFile(
+                        devicePath,
+                        GENERIC_READ | GENERIC_WRITE,
+                        0,                          // No sharing
+                        NULL,                       // Default security
+                        OPEN_EXISTING,              // Open existing device
+                        FILE_FLAG_OVERLAPPED,       // Use overlapped I/O
+                        NULL                        // No template
+                    );
+                    
+                    if (hDevice != INVALID_HANDLE_VALUE) {
+                        printf("  Successfully opened device!\n");
+                        CloseHandle(hDevice);
+                    } else {
+                        printf("  Failed to open device: %d\n", GetLastError());
+                    }
+                }
+                
+                // Try direct access to vport0p1
+                char directPaths[][256] = {
+                    "\\\\.\\vport0p1",
+                    "\\\\.\\GLOBALROOT\\Device\\vport0p1",
+                    "\\\\.\\Device\\vport0p1"
+                };
+                
+                for (int j = 0; j < 3; j++) {
+                    printf("  Trying direct path: %s\n", directPaths[j]);
+                    HANDLE hDevice = CreateFile(
+                        directPaths[j],
+                        GENERIC_READ | GENERIC_WRITE,
+                        0,                          // No sharing
+                        NULL,                       // Default security
+                        OPEN_EXISTING,              // Open existing device
+                        FILE_FLAG_OVERLAPPED,       // Use overlapped I/O
+                        NULL                        // No template
+                    );
+                    
+                    if (hDevice != INVALID_HANDLE_VALUE) {
+                        printf("  Successfully opened device with path: %s\n", directPaths[j]);
+                        CloseHandle(hDevice);
+                    } else {
+                        printf("  Failed to open device at %s: %d\n", directPaths[j], GetLastError());
+                    }
+                }
+                
+                break;
+            }
+        }
+    }
+    
+    SetupDiDestroyDeviceInfoList(hDevInfo);
+}
+
 HANDLE FindVirtIOSerialDevice(void) {
+    // Call the new function to trace vport0p1 details
+    CheckVport0p1Details();
+    
     HANDLE hDevice = INVALID_HANDLE_VALUE;
     HDEVINFO deviceInfoSet;
     SP_DEVICE_INTERFACE_DATA deviceInterfaceData;
