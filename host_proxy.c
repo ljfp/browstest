@@ -16,6 +16,8 @@
 #include <poll.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <sys/stat.h>
+#include <sys/select.h>
 
 #define MAX_CONNECTIONS 64
 #define BUFFER_SIZE 4096
@@ -182,6 +184,18 @@ int main(void) {
 bool InitializeVirtio(void) {
     printf("Attempting to connect to virtio socket at: %s\n", VIRTIO_DEVICE);
     
+    // Get file info about the socket
+    struct stat statbuf;
+    if (stat(VIRTIO_DEVICE, &statbuf) == -1) {
+        printf("Error: Cannot stat virtio socket: %s (errno=%d)\n", strerror(errno), errno);
+        printf("Make sure the QEMU VM is running with the virtio-serial device properly configured.\n");
+        return false;
+    }
+    
+    printf("Socket exists. Type: %s\n", S_ISSOCK(statbuf.st_mode) ? "socket" : 
+                                        S_ISCHR(statbuf.st_mode) ? "character device" : "other");
+    printf("Permissions: %o, Size: %ld\n", statbuf.st_mode & 0777, (long)statbuf.st_size);
+    
     // Create a socket
     g_virtioFd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (g_virtioFd < 0) {
@@ -197,6 +211,7 @@ bool InitializeVirtio(void) {
     strncpy(addr.sun_path, VIRTIO_DEVICE, sizeof(addr.sun_path) - 1);
     
     // Connect to the socket
+    printf("Connecting to socket...\n");
     if (connect(g_virtioFd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         printf("Error connecting to socket: %s (errno=%d)\n", strerror(errno), errno);
         perror("Failed to connect to virtio socket");
@@ -207,10 +222,9 @@ bool InitializeVirtio(void) {
     
     printf("Successfully connected to virtio socket, fd=%d\n", g_virtioFd);
     
-    // Wait a moment to ensure connection is fully established
-    sleep(1);
-    
     // Send a test message to verify the connection
+    printf("Sending test messages to VirtIO device...\n");
+    
     for (int i = 0; i < 5; i++) {  // Try sending 5 times with different patterns
         uint8_t testBuffer[sizeof(VIRTIO_MSG_HEADER) + 32];
         VIRTIO_MSG_HEADER* header = (VIRTIO_MSG_HEADER*)testBuffer;
@@ -241,6 +255,40 @@ bool InitializeVirtio(void) {
                 printf("Incomplete test message sent: %zd/%zu bytes\n", 
                       bytesSent, sizeof(VIRTIO_MSG_HEADER) + 16);
             }
+        }
+        
+        // Try to read a response immediately
+        fd_set readfds;
+        struct timeval tv;
+        
+        FD_ZERO(&readfds);
+        FD_SET(g_virtioFd, &readfds);
+        
+        // Set a short timeout for response
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        
+        int ret = select(g_virtioFd + 1, &readfds, NULL, NULL, &tv);
+        if (ret > 0) {
+            // Data is available to read
+            uint8_t respBuffer[1024];
+            ssize_t bytesRead = read(g_virtioFd, respBuffer, sizeof(respBuffer));
+            if (bytesRead > 0) {
+                printf("Received response: %zd bytes\n", bytesRead);
+                printf("Response data: ");
+                for (int j = 0; j < (bytesRead < 32 ? bytesRead : 32); j++) {
+                    printf("%02X ", respBuffer[j]);
+                }
+                printf("\n");
+            } else if (bytesRead == 0) {
+                printf("Connection closed by peer\n");
+            } else {
+                perror("Error reading response");
+            }
+        } else if (ret == 0) {
+            printf("No response received within timeout\n");
+        } else {
+            perror("Select error");
         }
         
         // Small delay between sends

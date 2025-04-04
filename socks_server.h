@@ -15,6 +15,8 @@
 #include <setupapi.h>  // For enumerating devices
 #include <winreg.h>    // For registry functions
 #include <cfgmgr32.h>  // For CM_ functions
+#include <initguid.h>  // For GUID definition
+#include <devguid.h>   // For device GUIDs
 
 // Link against required libraries
 #pragma comment(lib, "ws2_32.lib")
@@ -27,6 +29,11 @@
 #define MAX_CONNECTIONS 64
 #define BUFFER_SIZE 4096
 #define SOCKS_PORT 1080
+
+// Define the VirtIO Serial device interface GUID
+// {6FDE7521-1B65-48AE-B628-80BE62016026}
+DEFINE_GUID(GUID_DEVINTERFACE_VSERIAL, 
+    0x6fde7521, 0x1b65, 0x48ae, 0xb6, 0x28, 0x80, 0xbe, 0x62, 0x01, 0x60, 0x26);
 
 // Define multiple possible VirtIO device paths to try in sequence
 #define VIRTIO_PATHS_COUNT 7

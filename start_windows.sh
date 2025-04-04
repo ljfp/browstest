@@ -8,6 +8,11 @@ rm -f $SOCKET_PATH
 echo "Starting Windows VM with virtio-serial device..."
 echo "VirtIO socket path: $SOCKET_PATH"
 
+# Make sure the virtio-serial device is properly configured:
+# -device virtio-serial = adds the virtio-serial PCI device to the VM
+# -chardev socket,... = creates a socket-based character device backing
+# -device virtserialport,... = creates a virtio-serial port connected to the chardev
+
 qemu-system-x86_64 \
   -name "Windows_SOCKS_Test" \
   -enable-kvm \

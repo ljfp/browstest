@@ -396,12 +396,402 @@ void CheckVirtIODrivers(void) {
 
 HANDLE FindVirtIOSerialDevice(void) {
     HANDLE hDevice = INVALID_HANDLE_VALUE;
-    
-    // Check for VirtIO drivers
-    CheckVirtIODrivers();
-    
-    // List available COM ports to help identify the virtio device
+    HDEVINFO deviceInfoSet;
+    SP_DEVICE_INTERFACE_DATA deviceInterfaceData;
+    PSP_DEVICE_INTERFACE_DETAIL_DATA deviceInterfaceDetailData = NULL;
+    DWORD requiredSize;
+    BOOL result;
+    DWORD index = 0;
+    char devicePath[MAX_PATH] = {0};
+
+    // List available COM ports for informational purposes
     ListAvailableCOMPorts();
+    
+    printf("\nSearching for VirtIO-Serial devices...\n");
+
+    // Get a device information set for VirtIO devices
+    deviceInfoSet = SetupDiGetClassDevs(
+        &GUID_DEVINTERFACE_VSERIAL,
+        NULL,
+        NULL,
+        DIGCF_PRESENT | DIGCF_DEVICEINTERFACE
+    );
+
+    if (deviceInfoSet == INVALID_HANDLE_VALUE) {
+        printf("SetupDiGetClassDevs failed: %d\n", GetLastError());
+        
+        // Try the GUID_DEVCLASS_PORTS class to find all serial ports
+        printf("Trying to find all serial ports...\n");
+        deviceInfoSet = SetupDiGetClassDevs(
+            &GUID_DEVCLASS_PORTS,
+            NULL,
+            NULL,
+            DIGCF_PRESENT
+        );
+        
+        if (deviceInfoSet == INVALID_HANDLE_VALUE) {
+            printf("Failed to get device list for serial ports: %d\n", GetLastError());
+            return INVALID_HANDLE_VALUE;
+        }
+        
+        // Initialize the device interface data structure
+        deviceInterfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
+        
+        // Enumerate through all devices in the class
+        index = 0;
+        
+        // Use device info data since we're not using interfaces for COM ports
+        SP_DEVINFO_DATA deviceInfoData;
+        deviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+        
+        while (SetupDiEnumDeviceInfo(
+                deviceInfoSet,
+                index,
+                &deviceInfoData)) {
+                
+            char friendlyName[256] = {0};
+            char serviceKey[256] = {0};
+            
+            // Get friendly name
+            if (SetupDiGetDeviceRegistryProperty(
+                    deviceInfoSet,
+                    &deviceInfoData,
+                    SPDRP_FRIENDLYNAME,
+                    NULL,
+                    (BYTE*)friendlyName,
+                    sizeof(friendlyName),
+                    NULL)) {
+                
+                // Get service key
+                if (SetupDiGetDeviceRegistryProperty(
+                        deviceInfoSet,
+                        &deviceInfoData,
+                        SPDRP_SERVICE,
+                        NULL,
+                        (BYTE*)serviceKey,
+                        sizeof(serviceKey),
+                        NULL)) {
+                        
+                    printf("Found device: %s (Service: %s)\n", friendlyName, serviceKey);
+                    
+                    // Check if this is a VirtIO Serial device
+                    if (strstr(friendlyName, "VirtIO") || 
+                        strstr(serviceKey, "virt") || 
+                        strstr(serviceKey, "VIRT")) {
+                        
+                        // Get port name
+                        HKEY hDeviceKey = SetupDiOpenDevRegKey(
+                            deviceInfoSet,
+                            &deviceInfoData,
+                            DICS_FLAG_GLOBAL,
+                            0,
+                            DIREG_DEV,
+                            KEY_READ
+                        );
+                        
+                        if (hDeviceKey != INVALID_HANDLE_VALUE) {
+                            char portName[32] = {0};
+                            DWORD portNameSize = sizeof(portName);
+                            DWORD type = 0;
+                            
+                            if (RegQueryValueEx(
+                                    hDeviceKey,
+                                    "PortName",
+                                    NULL,
+                                    &type,
+                                    (BYTE*)portName,
+                                    &portNameSize) == ERROR_SUCCESS) {
+                                
+                                printf("Found VirtIO device port: %s\n", portName);
+                                
+                                // Form device path
+                                sprintf(devicePath, "\\\\.\\%s", portName);
+                                
+                                // Try to open the device
+                                printf("Trying to open device: %s\n", devicePath);
+                                
+                                hDevice = CreateFile(
+                                    devicePath,
+                                    GENERIC_READ | GENERIC_WRITE,
+                                    0,
+                                    NULL,
+                                    OPEN_EXISTING,
+                                    FILE_FLAG_OVERLAPPED,
+                                    NULL
+                                );
+                                
+                                if (hDevice != INVALID_HANDLE_VALUE) {
+                                    printf("Successfully opened VirtIO device: %s\n", devicePath);
+                                    
+                                    // Clean up
+                                    RegCloseKey(hDeviceKey);
+                                    SetupDiDestroyDeviceInfoList(deviceInfoSet);
+                                    
+                                    return hDevice;
+                                } else {
+                                    printf("Failed to open device: %d\n", GetLastError());
+                                }
+                            }
+                            
+                            RegCloseKey(hDeviceKey);
+                        }
+                    }
+                }
+            }
+            
+            index++;
+        }
+        
+        printf("No VirtIO Serial devices found.\n");
+        printf("Checking for vioserial driver...\n");
+        
+        // Get all devices and check for vioserial driver
+        SetupDiDestroyDeviceInfoList(deviceInfoSet);
+        deviceInfoSet = SetupDiGetClassDevs(
+            NULL,
+            NULL,
+            NULL,
+            DIGCF_PRESENT | DIGCF_ALLCLASSES
+        );
+        
+        if (deviceInfoSet == INVALID_HANDLE_VALUE) {
+            printf("Failed to get all device classes: %d\n", GetLastError());
+            return INVALID_HANDLE_VALUE;
+        }
+        
+        // Enumerate through all devices
+        index = 0;
+        deviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+        
+        while (SetupDiEnumDeviceInfo(
+                deviceInfoSet,
+                index,
+                &deviceInfoData)) {
+                
+            char serviceKey[256] = {0};
+            
+            // Get service key
+            if (SetupDiGetDeviceRegistryProperty(
+                    deviceInfoSet,
+                    &deviceInfoData,
+                    SPDRP_SERVICE,
+                    NULL,
+                    (BYTE*)serviceKey,
+                    sizeof(serviceKey),
+                    NULL)) {
+                    
+                // Check for vioserial
+                if (strcmp(serviceKey, "vioserial") == 0 || 
+                    strcmp(serviceKey, "VirtioSerial") == 0) {
+                    
+                    char deviceDesc[256] = {0};
+                    
+                    // Get device description
+                    if (SetupDiGetDeviceRegistryProperty(
+                            deviceInfoSet,
+                            &deviceInfoData,
+                            SPDRP_DEVICEDESC,
+                            NULL,
+                            (BYTE*)deviceDesc,
+                            sizeof(deviceDesc),
+                            NULL)) {
+                            
+                        printf("Found VirtIO Serial driver: %s\n", deviceDesc);
+                        
+                        // Get device ID
+                        if (SetupDiGetDeviceRegistryProperty(
+                                deviceInfoSet,
+                                &deviceInfoData,
+                                SPDRP_HARDWAREID,
+                                NULL,
+                                (BYTE*)deviceDesc,
+                                sizeof(deviceDesc),
+                                NULL)) {
+                                
+                            printf("Hardware ID: %s\n", deviceDesc);
+                        }
+                        
+                        // Check for COM port
+                        HKEY hDeviceKey = SetupDiOpenDevRegKey(
+                            deviceInfoSet,
+                            &deviceInfoData,
+                            DICS_FLAG_GLOBAL,
+                            0,
+                            DIREG_DEV,
+                            KEY_READ
+                        );
+                        
+                        if (hDeviceKey != INVALID_HANDLE_VALUE) {
+                            char portName[32] = {0};
+                            DWORD portNameSize = sizeof(portName);
+                            DWORD type = 0;
+                            
+                            if (RegQueryValueEx(
+                                    hDeviceKey,
+                                    "PortName",
+                                    NULL,
+                                    &type,
+                                    (BYTE*)portName,
+                                    &portNameSize) == ERROR_SUCCESS) {
+                                
+                                printf("Found VirtIO port: %s\n", portName);
+                                
+                                // Form device path
+                                sprintf(devicePath, "\\\\.\\%s", portName);
+                                
+                                // Try to open the device
+                                printf("Trying to open device: %s\n", devicePath);
+                                
+                                hDevice = CreateFile(
+                                    devicePath,
+                                    GENERIC_READ | GENERIC_WRITE,
+                                    0,
+                                    NULL,
+                                    OPEN_EXISTING,
+                                    FILE_FLAG_OVERLAPPED,
+                                    NULL
+                                );
+                                
+                                if (hDevice != INVALID_HANDLE_VALUE) {
+                                    printf("Successfully opened VirtIO device: %s\n", devicePath);
+                                    
+                                    // Clean up
+                                    RegCloseKey(hDeviceKey);
+                                    SetupDiDestroyDeviceInfoList(deviceInfoSet);
+                                    
+                                    return hDevice;
+                                } else {
+                                    printf("Failed to open device: %d\n", GetLastError());
+                                }
+                            }
+                            
+                            RegCloseKey(hDeviceKey);
+                        }
+                    }
+                }
+            }
+            
+            index++;
+        }
+        
+        // Fall back to trying the hardcoded paths
+        printf("No VirtIO Serial devices found via system APIs, trying hardcoded paths...\n");
+        
+        // Clean up
+        SetupDiDestroyDeviceInfoList(deviceInfoSet);
+        
+        // First try all the hardcoded paths
+        for (int i = 0; i < VIRTIO_PATHS_COUNT; i++) {
+            printf("Trying to open virtio device at: %s\n", VIRTIO_PATHS[i]);
+            
+            hDevice = CreateFile(
+                VIRTIO_PATHS[i],
+                GENERIC_READ | GENERIC_WRITE,
+                0,                          // No sharing
+                NULL,                       // Default security
+                OPEN_EXISTING,              // Open existing device
+                FILE_FLAG_OVERLAPPED,       // Use overlapped I/O
+                NULL                        // No template
+            );
+            
+            if (hDevice != INVALID_HANDLE_VALUE) {
+                printf("Successfully opened virtio device at: %s\n", VIRTIO_PATHS[i]);
+                return hDevice;
+            }
+            
+            printf("Failed to open virtio device at %s: %d\n", VIRTIO_PATHS[i], GetLastError());
+        }
+        
+        printf("Failed to find any VirtIO devices. Make sure VirtIO drivers are installed.\n");
+        return INVALID_HANDLE_VALUE;
+    }
+    
+    // Initialize the device interface data structure
+    deviceInterfaceData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
+    
+    // Enumerate through all devices
+    while (SetupDiEnumDeviceInterfaces(
+            deviceInfoSet,
+            NULL,
+            &GUID_DEVINTERFACE_VSERIAL,
+            index,
+            &deviceInterfaceData)) {
+            
+        // Get the required size of the device interface detail structure
+        result = SetupDiGetDeviceInterfaceDetail(
+            deviceInfoSet,
+            &deviceInterfaceData,
+            NULL,
+            0,
+            &requiredSize,
+            NULL
+        );
+        
+        // Use a fixed buffer instead of dynamic allocation
+        BYTE detailDataBuffer[1024];  // Fixed buffer, large enough for most cases
+        if (requiredSize > sizeof(detailDataBuffer)) {
+            printf("Required buffer size too large: %d\n", requiredSize);
+            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+            return INVALID_HANDLE_VALUE;
+        }
+        deviceInterfaceDetailData = (PSP_DEVICE_INTERFACE_DETAIL_DATA)detailDataBuffer;
+        deviceInterfaceDetailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
+
+        // Get the device interface detail
+        result = SetupDiGetDeviceInterfaceDetail(
+            deviceInfoSet,
+            &deviceInterfaceData,
+            deviceInterfaceDetailData,
+            requiredSize,
+            NULL,
+            NULL
+        );
+        
+        if (!result) {
+            printf("SetupDiGetDeviceInterfaceDetail failed: %d\n", GetLastError());
+            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+            return INVALID_HANDLE_VALUE;
+        }
+        
+        // Get the device path
+        strncpy(devicePath, deviceInterfaceDetailData->DevicePath, sizeof(devicePath) - 1);
+        devicePath[sizeof(devicePath) - 1] = '\0';
+        
+        printf("Found VirtIO Serial device: %s\n", devicePath);
+        
+        // Try to open the device
+        hDevice = CreateFile(
+            devicePath,
+            GENERIC_READ | GENERIC_WRITE,
+            0,
+            NULL,
+            OPEN_EXISTING,
+            FILE_FLAG_OVERLAPPED,
+            NULL
+        );
+        
+        if (hDevice != INVALID_HANDLE_VALUE) {
+            printf("Successfully opened VirtIO device\n");
+            
+            // Clean up
+            SetupDiDestroyDeviceInfoList(deviceInfoSet);
+            
+            return hDevice;
+        } else {
+            printf("Failed to open device: %d\n", GetLastError());
+        }
+        
+        index++;
+    }
+    
+    if (GetLastError() != ERROR_NO_MORE_ITEMS) {
+        printf("SetupDiEnumDeviceInterfaces failed: %d\n", GetLastError());
+    } else {
+        printf("No VirtIO Serial devices found\n");
+    }
+    
+    // Fall back to trying the hardcoded paths
+    printf("Trying hardcoded paths...\n");
     
     // First try all the hardcoded paths
     for (int i = 0; i < VIRTIO_PATHS_COUNT; i++) {
@@ -419,13 +809,17 @@ HANDLE FindVirtIOSerialDevice(void) {
         
         if (hDevice != INVALID_HANDLE_VALUE) {
             printf("Successfully opened virtio device at: %s\n", VIRTIO_PATHS[i]);
+            SetupDiDestroyDeviceInfoList(deviceInfoSet);
             return hDevice;
         }
         
         printf("Failed to open virtio device at %s: %d\n", VIRTIO_PATHS[i], GetLastError());
     }
     
-    printf("Failed to open any virtio device path. Please install VirtIO drivers.\n");
+    // Clean up
+    SetupDiDestroyDeviceInfoList(deviceInfoSet);
+    
+    printf("Failed to find any VirtIO devices. Make sure VirtIO drivers are installed.\n");
     return INVALID_HANDLE_VALUE;
 }
 
