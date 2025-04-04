@@ -13,11 +13,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <setupapi.h>  // For enumerating devices
+#include <winreg.h>    // For registry functions
 
 // Link against required libraries
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "mswsock.lib")  // Required for AcceptEx
 #pragma comment(lib, "setupapi.lib") // For device enumeration
+#pragma comment(lib, "advapi32.lib") // For registry functions
 
 // Constants
 #define MAX_CONNECTIONS 64

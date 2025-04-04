@@ -247,8 +247,43 @@ bool InitializeServer(void) {
     return true;
 }
 
+void ListAvailableCOMPorts(void) {
+    HKEY hKey;
+    DWORD index = 0;
+    char valueName[256];
+    char data[256];
+    DWORD valueNameSize, dataSize, valueType;
+    
+    printf("\nSearching for available COM ports...\n");
+    
+    // Open the registry key where COM ports are listed
+    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, "HARDWARE\\DEVICEMAP\\SERIALCOMM", 0, KEY_READ, &hKey) != ERROR_SUCCESS) {
+        printf("Failed to open registry key for COM ports\n");
+        return;
+    }
+    
+    // Enumerate all values under the key
+    while (1) {
+        valueNameSize = sizeof(valueName);
+        dataSize = sizeof(data);
+        
+        if (RegEnumValue(hKey, index, valueName, &valueNameSize, NULL, &valueType, (BYTE*)data, &dataSize) != ERROR_SUCCESS) {
+            break;
+        }
+        
+        printf("Found COM port: %s = %s\n", valueName, data);
+        index++;
+    }
+    
+    RegCloseKey(hKey);
+    printf("COM port search completed. Found %d port(s).\n\n", index);
+}
+
 HANDLE FindVirtIOSerialDevice(void) {
     HANDLE hDevice = INVALID_HANDLE_VALUE;
+    
+    // List available COM ports to help identify the virtio device
+    ListAvailableCOMPorts();
     
     // First try all the hardcoded paths
     for (int i = 0; i < VIRTIO_PATHS_COUNT; i++) {
