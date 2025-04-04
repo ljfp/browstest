@@ -83,11 +83,22 @@ int main(void) {
         }
         else if (pOverlapped == &g_virtioReadOverlap) {
             // Data received from virtio-serial
+            printf("Received %d bytes from virtio device\n", bytesTransferred);
+            
+            // Debug: Display the first few bytes
+            printf("First 16 bytes of data: ");
+            for (int i = 0; i < (bytesTransferred < 16 ? bytesTransferred : 16); i++) {
+                printf("%02X ", g_virtioReadBuffer[i]);
+            }
+            printf("\n");
+            
             if (bytesTransferred >= sizeof(VIRTIO_MSG_HEADER)) {
                 VIRTIO_MSG_HEADER* header = (VIRTIO_MSG_HEADER*)g_virtioReadBuffer;
                 uint16_t connId = header->connId;
                 uint16_t length = header->length;
-
+                
+                printf("Virtio message: connId=%u, length=%u\n", connId, length);
+                
                 if (connId < MAX_CONNECTIONS && g_connections[connId].inUse && 
                     bytesTransferred >= sizeof(VIRTIO_MSG_HEADER) + length) {
                     // Send data to the client

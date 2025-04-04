@@ -98,10 +98,21 @@ int main(void) {
         if (fds[0].revents & POLLIN) {
             ssize_t bytesRead = read(g_virtioFd, buffer, sizeof(buffer));
             if (bytesRead > 0) {
+                printf("Received %zd bytes from virtio device\n", bytesRead);
+                
+                // Debug: Display the first few bytes
+                printf("First 16 bytes of data: ");
+                for (int i = 0; i < (bytesRead < 16 ? bytesRead : 16); i++) {
+                    printf("%02X ", buffer[i]);
+                }
+                printf("\n");
+                
                 if (bytesRead >= (ssize_t)sizeof(VIRTIO_MSG_HEADER)) {
                     VIRTIO_MSG_HEADER* header = (VIRTIO_MSG_HEADER*)buffer;
                     uint16_t connId = header->connId;
                     uint16_t length = header->length;
+                    
+                    printf("Virtio message: connId=%u, length=%u\n", connId, length);
                     
                     if (bytesRead >= (ssize_t)(sizeof(VIRTIO_MSG_HEADER) + length)) {
                         // Check if this is a new connection or data for an existing one
@@ -195,6 +206,28 @@ bool InitializeVirtio(void) {
     }
     
     printf("Successfully connected to virtio socket, fd=%d\n", g_virtioFd);
+    
+    // Send a test message to verify the connection
+    uint8_t testBuffer[sizeof(VIRTIO_MSG_HEADER) + 16];
+    VIRTIO_MSG_HEADER* header = (VIRTIO_MSG_HEADER*)testBuffer;
+    header->connId = 0xFFFF;  // Special test connection ID
+    header->length = 12;       // Length of "Hello, World!"
+    
+    // Copy the test message
+    memcpy(testBuffer + sizeof(VIRTIO_MSG_HEADER), "Hello, World!", 12);
+    
+    // Send the message
+    ssize_t bytesSent = write(g_virtioFd, testBuffer, sizeof(VIRTIO_MSG_HEADER) + 12);
+    if (bytesSent == sizeof(VIRTIO_MSG_HEADER) + 12) {
+        printf("Test message sent successfully: %zd bytes\n", bytesSent);
+    } else {
+        if (bytesSent < 0) {
+            perror("Failed to send test message");
+        } else {
+            printf("Incomplete test message sent: %zd/%zu bytes\n", 
+                  bytesSent, sizeof(VIRTIO_MSG_HEADER) + 12);
+        }
+    }
     
     // Set non-blocking mode
     int flags = fcntl(g_virtioFd, F_GETFL, 0);
