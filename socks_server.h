@@ -14,12 +14,14 @@
 #include <stdint.h>
 #include <setupapi.h>  // For enumerating devices
 #include <winreg.h>    // For registry functions
+#include <cfgmgr32.h>  // For CM_ functions
 
 // Link against required libraries
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "mswsock.lib")  // Required for AcceptEx
 #pragma comment(lib, "setupapi.lib") // For device enumeration
 #pragma comment(lib, "advapi32.lib") // For registry functions
+#pragma comment(lib, "cfgmgr32.lib") // For configuration manager functions
 
 // Constants
 #define MAX_CONNECTIONS 64
@@ -29,13 +31,13 @@
 // Define multiple possible VirtIO device paths to try in sequence
 #define VIRTIO_PATHS_COUNT 7
 static const char* VIRTIO_PATHS[VIRTIO_PATHS_COUNT] = {
-    "\\\\.\\vport0p1",                  // Direct device path for VirtIO
-    "\\\\.\\Global\\vserial0",          // New QEMU device name
-    "\\\\.\\vserial0",                  // Alternate path for new device name
-    "\\\\.\\COM1",                      // Try standard COM ports
-    "\\\\.\\COM2",
-    "\\\\.\\COM3",
-    "\\\\.\\COM4"
+    "\\\\.\\\\GLOBALROOT\\Device\\VirtIO\\{74b3b5d0-e2fc-4dda-ad3d-c1a47a988e30}\\", // Red Hat VirtIO specific path
+    "\\\\.\\\\Device\\VirtIO\\{74b3b5d0-e2fc-4dda-ad3d-c1a47a988e30}\\", // Alternative format
+    "\\\\.\\Global\\com.redhat.spice.0",  // Standard virtio-serial name
+    "\\\\.\\com.redhat.spice.0",          // Alternative format
+    "\\\\.\\vport0p1",                    // Direct virtio port device
+    "\\\\.\\COM2",                        // Try COM2-COM4 (not COM1 which is likely the standard serial)
+    "\\\\.\\COM3"  
 };
 
 // Function to find VirtIO serial device (declaration)

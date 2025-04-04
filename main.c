@@ -279,8 +279,126 @@ void ListAvailableCOMPorts(void) {
     printf("COM port search completed. Found %d port(s).\n\n", index);
 }
 
+void CheckVirtIODrivers(void) {
+    printf("\nChecking for VirtIO Serial Drivers...\n");
+    
+    HDEVINFO hDevInfo;
+    SP_DEVINFO_DATA DeviceInfoData;
+    DWORD i;
+    
+    // Get a device information set for all devices
+    hDevInfo = SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_PRESENT | DIGCF_ALLCLASSES);
+    if (hDevInfo == INVALID_HANDLE_VALUE) {
+        printf("Failed to get device list: %d\n", GetLastError());
+        return;
+    }
+    
+    // Enumerate through all devices
+    DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    for (i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &DeviceInfoData); i++) {
+        // Get device description
+        char buffer[256] = {0};
+        
+        if (SetupDiGetDeviceRegistryProperty(
+                hDevInfo,
+                &DeviceInfoData,
+                SPDRP_DEVICEDESC,
+                NULL,
+                (PBYTE)buffer,
+                sizeof(buffer),
+                NULL)) {
+            
+            // Check if it contains VirtIO or Red Hat related strings
+            if (strstr(buffer, "VirtIO") || strstr(buffer, "Red Hat")) {
+                printf("Found potential VirtIO device: %s\n", buffer);
+                
+                // Try to get the hardware ID
+                if (SetupDiGetDeviceRegistryProperty(
+                        hDevInfo,
+                        &DeviceInfoData,
+                        SPDRP_HARDWAREID,
+                        NULL,
+                        (PBYTE)buffer,
+                        sizeof(buffer),
+                        NULL)) {
+                    printf("  Hardware ID: %s\n", buffer);
+                }
+                
+                // Try to get the service
+                if (SetupDiGetDeviceRegistryProperty(
+                        hDevInfo,
+                        &DeviceInfoData,
+                        SPDRP_SERVICE,
+                        NULL,
+                        (PBYTE)buffer,
+                        sizeof(buffer),
+                        NULL)) {
+                    printf("  Service: %s\n", buffer);
+                }
+                
+                // Try to get the device path
+                HKEY hDeviceKey = SetupDiOpenDevRegKey(
+                    hDevInfo,
+                    &DeviceInfoData,
+                    DICS_FLAG_GLOBAL,
+                    0,
+                    DIREG_DEV,
+                    KEY_READ);
+                    
+                if (hDeviceKey != INVALID_HANDLE_VALUE) {
+                    char portName[32] = {0};
+                    DWORD portNameSize = sizeof(portName);
+                    DWORD type = 0;
+                    
+                    if (RegQueryValueEx(
+                            hDeviceKey,
+                            "PortName",
+                            NULL,
+                            &type,
+                            (BYTE*)portName,
+                            &portNameSize) == ERROR_SUCCESS) {
+                        printf("  Port Name: %s\n", portName);
+                    }
+                    
+                    RegCloseKey(hDeviceKey);
+                }
+            }
+        }
+    }
+    
+    // Check for any unrecognized devices
+    SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_PRESENT | DIGCF_ALLCLASSES | DIGCF_DEVICEINTERFACE);
+    DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    i = 0;
+    while (SetupDiEnumDeviceInfo(hDevInfo, i, &DeviceInfoData)) {
+        DWORD status = 0, problem = 0;
+        if (CM_Get_DevNode_Status(&status, &problem, DeviceInfoData.DevInst, 0) == CR_SUCCESS) {
+            if (status & DN_HAS_PROBLEM) {
+                char buffer[256] = {0};
+                if (SetupDiGetDeviceRegistryProperty(
+                        hDevInfo,
+                        &DeviceInfoData,
+                        SPDRP_DEVICEDESC,
+                        NULL,
+                        (PBYTE)buffer,
+                        sizeof(buffer),
+                        NULL)) {
+                    printf("Found problem device: %s (Problem code: %d)\n", buffer, problem);
+                }
+            }
+        }
+        i++;
+    }
+    
+    SetupDiDestroyDeviceInfoList(hDevInfo);
+    printf("VirtIO driver check completed.\n\n");
+}
+
 HANDLE FindVirtIOSerialDevice(void) {
     HANDLE hDevice = INVALID_HANDLE_VALUE;
+    
+    // Check for VirtIO drivers
+    CheckVirtIODrivers();
     
     // List available COM ports to help identify the virtio device
     ListAvailableCOMPorts();
@@ -311,6 +429,77 @@ HANDLE FindVirtIOSerialDevice(void) {
     return INVALID_HANDLE_VALUE;
 }
 
+void TestVirtioRead(void) {
+    printf("Testing direct read from virtio device...\n");
+    
+    uint8_t buffer[1024];
+    DWORD bytesRead = 0;
+    BOOL result;
+    OVERLAPPED overlap = {0};
+    
+    // Try to read synchronously first
+    result = ReadFile(
+        g_virtioHandle,
+        buffer,
+        sizeof(buffer),
+        &bytesRead,
+        NULL  // No overlapped
+    );
+    
+    if (result) {
+        printf("Direct sync read succeeded: %d bytes\n", bytesRead);
+        // Print the bytes if any were read
+        if (bytesRead > 0) {
+            printf("Read data: ");
+            for (DWORD i = 0; i < (bytesRead < 32 ? bytesRead : 32); i++) {
+                printf("%02X ", buffer[i]);
+            }
+            printf("\n");
+        }
+    } else {
+        printf("Direct sync read failed: %d\n", GetLastError());
+    }
+    
+    // Try an async read with manual wait
+    memset(&overlap, 0, sizeof(overlap));
+    result = ReadFile(
+        g_virtioHandle,
+        buffer,
+        sizeof(buffer),
+        &bytesRead,
+        &overlap
+    );
+    
+    if (!result) {
+        if (GetLastError() == ERROR_IO_PENDING) {
+            printf("Async read pending, waiting...\n");
+            if (GetOverlappedResult(g_virtioHandle, &overlap, &bytesRead, TRUE)) {
+                printf("Async read completed: %d bytes\n", bytesRead);
+                if (bytesRead > 0) {
+                    printf("Read data: ");
+                    for (DWORD i = 0; i < (bytesRead < 32 ? bytesRead : 32); i++) {
+                        printf("%02X ", buffer[i]);
+                    }
+                    printf("\n");
+                }
+            } else {
+                printf("GetOverlappedResult failed: %d\n", GetLastError());
+            }
+        } else {
+            printf("Async read failed immediately: %d\n", GetLastError());
+        }
+    } else {
+        printf("Async read completed immediately: %d bytes\n", bytesRead);
+        if (bytesRead > 0) {
+            printf("Read data: ");
+            for (DWORD i = 0; i < (bytesRead < 32 ? bytesRead : 32); i++) {
+                printf("%02X ", buffer[i]);
+            }
+            printf("\n");
+        }
+    }
+}
+
 bool InitializeVirtio(void) {
     // Try to find and open the virtio device
     g_virtioHandle = FindVirtIOSerialDevice();
@@ -326,6 +515,9 @@ bool InitializeVirtio(void) {
         g_virtioHandle = INVALID_HANDLE_VALUE;
         return false;
     }
+    
+    // Try a test read to verify the connection works
+    TestVirtioRead();
     
     return true;
 }

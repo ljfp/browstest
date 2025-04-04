@@ -5,6 +5,9 @@ SOCKET_PATH="/tmp/vserial"
 # Remove any existing socket
 rm -f $SOCKET_PATH
 
+echo "Starting Windows VM with virtio-serial device..."
+echo "VirtIO socket path: $SOCKET_PATH"
+
 qemu-system-x86_64 \
   -name "Windows_SOCKS_Test" \
   -enable-kvm \

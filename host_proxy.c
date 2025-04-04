@@ -207,26 +207,44 @@ bool InitializeVirtio(void) {
     
     printf("Successfully connected to virtio socket, fd=%d\n", g_virtioFd);
     
+    // Wait a moment to ensure connection is fully established
+    sleep(1);
+    
     // Send a test message to verify the connection
-    uint8_t testBuffer[sizeof(VIRTIO_MSG_HEADER) + 16];
-    VIRTIO_MSG_HEADER* header = (VIRTIO_MSG_HEADER*)testBuffer;
-    header->connId = 0xFFFF;  // Special test connection ID
-    header->length = 12;       // Length of "Hello, World!"
-    
-    // Copy the test message
-    memcpy(testBuffer + sizeof(VIRTIO_MSG_HEADER), "Hello, World!", 12);
-    
-    // Send the message
-    ssize_t bytesSent = write(g_virtioFd, testBuffer, sizeof(VIRTIO_MSG_HEADER) + 12);
-    if (bytesSent == sizeof(VIRTIO_MSG_HEADER) + 12) {
-        printf("Test message sent successfully: %zd bytes\n", bytesSent);
-    } else {
-        if (bytesSent < 0) {
-            perror("Failed to send test message");
-        } else {
-            printf("Incomplete test message sent: %zd/%zu bytes\n", 
-                  bytesSent, sizeof(VIRTIO_MSG_HEADER) + 12);
+    for (int i = 0; i < 5; i++) {  // Try sending 5 times with different patterns
+        uint8_t testBuffer[sizeof(VIRTIO_MSG_HEADER) + 32];
+        VIRTIO_MSG_HEADER* header = (VIRTIO_MSG_HEADER*)testBuffer;
+        header->connId = 0xFFFF;  // Special test connection ID
+        header->length = 16;      // Length of test message
+        
+        // Prepare a test pattern that's easy to recognize
+        uint8_t* payload = testBuffer + sizeof(VIRTIO_MSG_HEADER);
+        for (int j = 0; j < 16; j++) {
+            payload[j] = (i * 16) + j;  // Create a recognizable pattern
         }
+        
+        // Print the exact bytes we're sending for debugging
+        printf("Sending test message %d, %zu bytes: ", i+1, sizeof(VIRTIO_MSG_HEADER) + 16);
+        for (size_t j = 0; j < sizeof(VIRTIO_MSG_HEADER) + 16; j++) {
+            printf("%02X ", testBuffer[j]);
+        }
+        printf("\n");
+        
+        // Send the message
+        ssize_t bytesSent = write(g_virtioFd, testBuffer, sizeof(VIRTIO_MSG_HEADER) + 16);
+        if (bytesSent == sizeof(VIRTIO_MSG_HEADER) + 16) {
+            printf("Test message %d sent successfully: %zd bytes\n", i+1, bytesSent);
+        } else {
+            if (bytesSent < 0) {
+                perror("Failed to send test message");
+            } else {
+                printf("Incomplete test message sent: %zd/%zu bytes\n", 
+                      bytesSent, sizeof(VIRTIO_MSG_HEADER) + 16);
+            }
+        }
+        
+        // Small delay between sends
+        usleep(200000);  // 200ms
     }
     
     // Set non-blocking mode
@@ -245,6 +263,7 @@ bool InitializeVirtio(void) {
         return false;
     }
     
+    printf("VirtIO socket setup complete and ready for connections\n");
     return true;
 }
 
