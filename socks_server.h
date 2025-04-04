@@ -12,16 +12,32 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <setupapi.h>  // For enumerating devices
 
 // Link against required libraries
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "mswsock.lib")  // Required for AcceptEx
+#pragma comment(lib, "setupapi.lib") // For device enumeration
 
 // Constants
 #define MAX_CONNECTIONS 64
 #define BUFFER_SIZE 4096
 #define SOCKS_PORT 1080
-#define VIRTIO_DEVICE "\\\\.\\Global\\com.redhat.spice.0"  // VirtIO device found in Device Manager
+
+// Define multiple possible VirtIO device paths to try in sequence
+#define VIRTIO_PATHS_COUNT 7
+static const char* VIRTIO_PATHS[VIRTIO_PATHS_COUNT] = {
+    "\\\\.\\vport0p1",                  // Direct device path for VirtIO
+    "\\\\.\\Global\\vserial0",          // New QEMU device name
+    "\\\\.\\vserial0",                  // Alternate path for new device name
+    "\\\\.\\COM1",                      // Try standard COM ports
+    "\\\\.\\COM2",
+    "\\\\.\\COM3",
+    "\\\\.\\COM4"
+};
+
+// Function to find VirtIO serial device (declaration)
+HANDLE FindVirtIOSerialDevice(void);
 
 // SOCKS protocol constants
 #define SOCKS_VERSION 5

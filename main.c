@@ -236,23 +236,43 @@ bool InitializeServer(void) {
     return true;
 }
 
-bool InitializeVirtio(void) {
-    // Open the virtio-serial device
-    g_virtioHandle = CreateFile(
-        VIRTIO_DEVICE,
-        GENERIC_READ | GENERIC_WRITE,
-        0,                          // No sharing
-        NULL,                       // Default security
-        OPEN_EXISTING,              // Open existing device
-        FILE_FLAG_OVERLAPPED,       // Use overlapped I/O
-        NULL                        // No template
-    );
+HANDLE FindVirtIOSerialDevice(void) {
+    HANDLE hDevice = INVALID_HANDLE_VALUE;
+    
+    // First try all the hardcoded paths
+    for (int i = 0; i < VIRTIO_PATHS_COUNT; i++) {
+        printf("Trying to open virtio device at: %s\n", VIRTIO_PATHS[i]);
+        
+        hDevice = CreateFile(
+            VIRTIO_PATHS[i],
+            GENERIC_READ | GENERIC_WRITE,
+            0,                          // No sharing
+            NULL,                       // Default security
+            OPEN_EXISTING,              // Open existing device
+            FILE_FLAG_OVERLAPPED,       // Use overlapped I/O
+            NULL                        // No template
+        );
+        
+        if (hDevice != INVALID_HANDLE_VALUE) {
+            printf("Successfully opened virtio device at: %s\n", VIRTIO_PATHS[i]);
+            return hDevice;
+        }
+        
+        printf("Failed to open virtio device at %s: %d\n", VIRTIO_PATHS[i], GetLastError());
+    }
+    
+    printf("Failed to open any virtio device path. Please install VirtIO drivers.\n");
+    return INVALID_HANDLE_VALUE;
+}
 
+bool InitializeVirtio(void) {
+    // Try to find and open the virtio device
+    g_virtioHandle = FindVirtIOSerialDevice();
+    
     if (g_virtioHandle == INVALID_HANDLE_VALUE) {
-        printf("Failed to open virtio device: %d\n", GetLastError());
         return false;
     }
-
+    
     // Associate virtio handle with IOCP
     if (CreateIoCompletionPort(g_virtioHandle, g_iocp, 0, 0) == NULL) {
         printf("Failed to associate virtio with IOCP: %d\n", GetLastError());
@@ -260,7 +280,7 @@ bool InitializeVirtio(void) {
         g_virtioHandle = INVALID_HANDLE_VALUE;
         return false;
     }
-
+    
     return true;
 }
 
